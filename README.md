@@ -244,7 +244,117 @@ python scripts/scrape_full_content.py --sequential
 
 **For detailed comparison of scraping strategies, see:** [docs/SCRAPING_STRATEGIES.md](docs/SCRAPING_STRATEGIES.md)
 
-### Step 4: View Statistics and Analytics
+### Step 4: Process Articles with AI for Language Learning (Optional)
+
+After scraping articles, you can enhance them with AI-powered analysis for language learning purposes using Groq's Llama 3.1 70B model.
+
+#### Get Groq API Key
+
+1. Go to [https://console.groq.com/keys](https://console.groq.com/keys)
+2. Sign up for a free account
+3. Create a new API key
+4. Add it to your `.env` file:
+```env
+GROQ_API_KEY=your-groq-api-key-here
+```
+
+#### Run Database Migration
+
+Before processing, create the `article_analysis` table:
+
+1. In Supabase, go to **SQL Editor**
+2. Click "New query"
+3. Copy the contents of [supabase/migrations/002_article_analysis.sql](supabase/migrations/002_article_analysis.sql)
+4. Paste and click "Run"
+
+This creates the `article_analysis` table with foreign key to `articles`.
+
+#### Process Articles
+
+The AI processor extracts language learning features from articles:
+
+**Features Analyzed:**
+- **Language Level (CEFR)**: A1-C2 classification
+- **Topics**: Main topics covered (politics, technology, health, etc.)
+- **Vocabulary**: 5-15 key words with artikel (der/die/das), English translation, and plural form
+- **Grammar Patterns**: Key grammar structures worth learning
+
+**Test with 100 articles (recommended first):**
+```bash
+python scripts/process_articles.py --limit 100
+```
+
+**Process all articles:**
+```bash
+python scripts/process_articles.py
+```
+
+**Custom budget:**
+```bash
+# Process with $2.50 budget
+python scripts/process_articles.py --max-cost 2.50
+```
+
+**Cost Estimates (Groq Llama 3.1 70B):**
+- Average: ~$0.0006 per article
+- 100 articles: ~$0.06
+- 1,444 articles: ~$0.91
+- Default budget: $5.00
+
+Expected output:
+```
+===============================================================================
+AI ARTICLE PROCESSOR FOR LANGUAGE LEARNING
+===============================================================================
+Model: Llama 3.1 70B (via Groq)
+Budget: $5.00 USD
+Rate limit: 0.5s between requests
+Max retries: 3
+Limit: 100 articles (testing mode)
+===============================================================================
+
+Processing article 1/100: 12345
+Processed article 12345: B2, 8 words, 1234 tokens, $0.0006
+
+Progress: 10/100 (10.0%) | Cost: $0.0059 | Rate: 2.3 articles/sec | ETA: 38s
+...
+===============================================================================
+PROCESSING COMPLETE!
+===============================================================================
+✓ Successfully processed: 100
+✗ Failed: 0
+
+📊 Statistics:
+  Total tokens: 123,456
+  Avg tokens/article: 1,235
+
+💰 Cost:
+  Total: $0.0598
+  Avg/article: $0.000598
+  Remaining budget: $4.9402
+===============================================================================
+```
+
+**Advanced Options:**
+```bash
+# Faster processing (less polite to API)
+python scripts/process_articles.py --rate-limit 0.2
+
+# More retries for unstable connections
+python scripts/process_articles.py --max-retries 5
+
+# See all options
+python scripts/process_articles.py --help
+```
+
+**Benefits for Language Learners:**
+- **Difficulty filtering**: Find articles matching your level (A1-C2)
+- **Topic-based learning**: Focus on subjects you care about
+- **Vocabulary building**: Learn words with proper grammar (artikel + plural)
+- **Contextual grammar**: See grammar patterns in real usage
+- **Smart recommendations**: Build recommendation systems based on analysis
+
+### Step 5: View Statistics and Analytics
 
 Use the built-in statistics tool to analyze your scraped data:
 
@@ -305,6 +415,8 @@ german-feed-scraper/
 │   ├── scrapers/
 │   │   ├── feed_discovery.py  # Feed discovery using feedsearch.dev
 │   │   └── rss_scraper.py     # RSS feed scraping
+│   ├── processors/            # AI processing modules
+│   │   └── ai_processor.py    # AI article analysis with Groq
 │   ├── analytics/             # Statistics and analytics
 │   │   └── statistics.py      # Database statistics module
 │   └── utils/
@@ -313,12 +425,14 @@ german-feed-scraper/
 │   ├── discover_feeds.py      # Script to discover feeds
 │   ├── run_scraper.py         # Script to scrape articles (RSS only)
 │   ├── scrape_full_content.py # Script to scrape full content
+│   ├── process_articles.py    # Script to process articles with AI
 │   └── show_stats.py          # Script to display statistics
 ├── docs/
 │   └── SCRAPING_STRATEGIES.md # Detailed scraping strategy documentation
 ├── supabase/
 │   └── migrations/
-│       └── 001_initial_schema.sql  # Database schema
+│       ├── 001_initial_schema.sql     # Initial database schema
+│       └── 002_article_analysis.sql   # AI analysis table
 ├── .env                       # Your environment variables (not in git)
 ├── .env.example              # Environment template
 ├── requirements.txt          # Python dependencies
@@ -374,6 +488,7 @@ The scraper is configured to discover feeds from these German websites:
 |----------|-------------|---------|----------|
 | `SUPABASE_URL` | Your Supabase project URL | - | Yes |
 | `SUPABASE_KEY` | Supabase service role key | - | Yes |
+| `GROQ_API_KEY` | Groq API key for AI processing | - | For AI features |
 | `LOG_LEVEL` | Logging level (DEBUG, INFO, ERROR) | INFO | No |
 | `SCRAPE_INTERVAL` | Minutes between scrapes (for future scheduling) | 60 | No |
 

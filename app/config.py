@@ -9,6 +9,7 @@ class Settings(BaseSettings):
     supabase_key: str = Field(..., env="SUPABASE_KEY")
     log_level: str = Field(default="INFO", env="LOG_LEVEL")
     scrape_interval: int = Field(default=60, env="SCRAPE_INTERVAL")
+    groq_api_key: str = Field(default="", env="GROQ_API_KEY")
 
     class Config:
         env_file = ".env"
