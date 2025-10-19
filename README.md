@@ -244,6 +244,30 @@ python scripts/scrape_full_content.py --sequential
 
 **For detailed comparison of scraping strategies, see:** [docs/SCRAPING_STRATEGIES.md](docs/SCRAPING_STRATEGIES.md)
 
+### Step 4: View Statistics and Analytics
+
+Use the built-in statistics tool to analyze your scraped data:
+
+```bash
+# Show complete statistics report
+python scripts/show_stats.py
+
+# Show recent articles from specific domain
+python scripts/show_stats.py --recent 10 --domain www.spiegel.de
+
+# Export statistics to JSON
+python scripts/show_stats.py --export-json stats.json
+
+# Export domain breakdown to CSV
+python scripts/show_stats.py --export-csv domains.csv
+
+# Show only feed statistics
+python scripts/show_stats.py --feeds-only
+
+# Show only article statistics
+python scripts/show_stats.py --articles-only
+```
+
 ### Viewing Your Data
 
 To view the scraped articles:
@@ -281,11 +305,17 @@ german-feed-scraper/
 │   ├── scrapers/
 │   │   ├── feed_discovery.py  # Feed discovery using feedsearch.dev
 │   │   └── rss_scraper.py     # RSS feed scraping
+│   ├── analytics/             # Statistics and analytics
+│   │   └── statistics.py      # Database statistics module
 │   └── utils/
 │       └── logger.py          # Logging configuration
 ├── scripts/
 │   ├── discover_feeds.py      # Script to discover feeds
-│   └── run_scraper.py         # Script to scrape articles
+│   ├── run_scraper.py         # Script to scrape articles (RSS only)
+│   ├── scrape_full_content.py # Script to scrape full content
+│   └── show_stats.py          # Script to display statistics
+├── docs/
+│   └── SCRAPING_STRATEGIES.md # Detailed scraping strategy documentation
 ├── supabase/
 │   └── migrations/
 │       └── 001_initial_schema.sql  # Database schema
