@@ -354,7 +354,124 @@ python scripts/process_articles.py --help
 - **Contextual grammar**: See grammar patterns in real usage
 - **Smart recommendations**: Build recommendation systems based on analysis
 
-### Step 5: View Statistics and Analytics
+### Step 5: Clean Article Content for Language Learners
+
+After analyzing articles, you can clean and optimize the content to make it more suitable for language learners.
+
+#### What Content Cleaning Does:
+
+✅ **Removes noise**: HTML artifacts, ads, author bios, navigation elements
+✅ **Removes off-topic content**: Focuses on main topics identified in analysis
+✅ **Removes promotional text**: "Lesen Sie mehr", related article teasers, newsletter signups
+✅ **Fixes formatting**: Merged words, extra spaces, special characters
+✅ **Preserves language level**: Keeps original B1/B2/C1 vocabulary and grammar
+✅ **Preserves meaning**: No summarization, all important information kept
+
+**Test with 10 articles:**
+```bash
+python scripts/clean_content.py --limit 10
+```
+
+**Process all analyzed articles:**
+```bash
+python scripts/clean_content.py
+```
+
+**Cost Estimates (Groq Llama 3.3 70B):**
+- Average: ~$0.0012 per article
+- 100 articles: ~$0.12
+- 1,444 articles: ~$1.69
+- Default budget: $5.00
+
+Expected output:
+```
+===============================================================================
+CONTENT PROCESSOR FOR LANGUAGE LEARNING
+===============================================================================
+Model: Llama 3.3 70B (via Groq)
+Budget: $5.00 USD
+Rate limit: 0.5s between requests
+Max retries: 3
+Limit: 100 articles (testing mode)
+===============================================================================
+
+Processing article 1/100: ca8084fb-0357-4fcc-afb9-37c25a45b264
+Processed article ca8084fb-0357-4fcc-afb9-37c25a45b264: 135→131 words (-3.0%)
+
+Progress: 10/100 (10.0%) | Cost: $0.0090 | Avg reduction: 16 words
+...
+===============================================================================
+CONTENT PROCESSING COMPLETE!
+===============================================================================
+✓ Successfully processed: 99
+✗ Failed: 1
+
+📊 Statistics:
+  Total tokens: 170,234
+  Avg tokens/article: 1,720
+  Total words removed: 44,550
+  Avg words removed/article: 450
+
+💰 Cost:
+  Total: $0.1161
+  Avg/article: $0.001173
+  Remaining budget: $4.8839
+===============================================================================
+```
+
+**Advanced Options:**
+```bash
+# Custom budget
+python scripts/clean_content.py --max-cost 2.50
+
+# Faster processing
+python scripts/clean_content.py --rate-limit 0.3
+
+# See all options
+python scripts/clean_content.py --help
+```
+
+**View cleaned articles in Supabase:**
+```sql
+-- Compare before and after
+SELECT
+    a.title,
+    pc.word_count_before,
+    pc.word_count_after,
+    pc.words_removed,
+    ROUND((pc.words_removed::float / pc.word_count_before * 100), 1) as reduction_pct
+FROM articles a
+JOIN processed_content pc ON a.id = pc.article_id
+ORDER BY pc.words_removed DESC
+LIMIT 10;
+
+-- View cleaned content
+SELECT a.title, pc.cleaned_content
+FROM articles a
+JOIN processed_content pc ON a.id = pc.article_id
+LIMIT 5;
+```
+
+**Complete Pipeline:**
+```sql
+-- Join all three tables for complete article data
+SELECT
+    a.title,
+    a.url,
+    aa.language_level,
+    aa.topics,
+    aa.vocabulary,
+    aa.grammar_patterns,
+    pc.cleaned_content,
+    pc.words_removed
+FROM articles a
+JOIN article_analysis aa ON a.id = aa.article_id
+JOIN processed_content pc ON a.id = pc.article_id
+WHERE aa.language_level = 'B1'
+LIMIT 10;
+```
+
+### Step 6: View Statistics and Analytics
 
 Use the built-in statistics tool to analyze your scraped data:
 
@@ -416,7 +533,8 @@ german-feed-scraper/
 │   │   ├── feed_discovery.py  # Feed discovery using feedsearch.dev
 │   │   └── rss_scraper.py     # RSS feed scraping
 │   ├── processors/            # AI processing modules
-│   │   └── ai_processor.py    # AI article analysis with Groq
+│   │   ├── ai_processor.py    # AI article analysis with Groq
+│   │   └── content_processor.py # Content cleaning for learners
 │   ├── analytics/             # Statistics and analytics
 │   │   └── statistics.py      # Database statistics module
 │   └── utils/
@@ -426,13 +544,15 @@ german-feed-scraper/
 │   ├── run_scraper.py         # Script to scrape articles (RSS only)
 │   ├── scrape_full_content.py # Script to scrape full content
 │   ├── process_articles.py    # Script to process articles with AI
+│   ├── clean_content.py       # Script to clean article content
 │   └── show_stats.py          # Script to display statistics
 ├── docs/
 │   └── SCRAPING_STRATEGIES.md # Detailed scraping strategy documentation
 ├── supabase/
 │   └── migrations/
 │       ├── 001_initial_schema.sql     # Initial database schema
-│       └── 002_article_analysis.sql   # AI analysis table
+│       ├── 002_article_analysis.sql   # AI analysis table
+│       └── 003_processed_content.sql  # Cleaned content table
 ├── .env                       # Your environment variables (not in git)
 ├── .env.example              # Environment template
 ├── requirements.txt          # Python dependencies
