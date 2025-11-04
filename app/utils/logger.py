@@ -1,6 +1,6 @@
 import logging
 import sys
-from app.config import settings
+from app.settings import settings
 
 
 def get_logger(name: str) -> logging.Logger:

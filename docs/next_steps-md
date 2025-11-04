@@ -1,0 +1,25 @@
+1 Run SQL Migration:
+- Open Supabase dashboard
+- Run 004_frontend_views_and_rls.sql
+- Verify views were created
+2 Create Frontend Project:
+- Copy FRONTEND_SPECIFICATION.md to your frontend repo
+- Follow the implementation checklist
+- Use Server Components as shown in examples
+3 Test Connection:
+- Add Supabase credentials to .env.local
+- Test querying article_list_view
+- Verify you can fetch articles
+- Everything is ready for you to start building! 🚀
+
+- For backend - improve the keywords - maybe dont include the words that are intuitive to understand (similar word with english) - maybe more words for the longer texts and harder levels
+- maybe texts can also look better, like instead of single paragprahp they can be structured 
+- backend - the process quality, for examplle 
+hallucination - orginal text:_ https://www.nachrichtenleicht.de/hoechste-bruecke-der-welt-china-102.html
+the actual newsa: Die Huajiang-Brücke ist gut 1.400 Meter lang. Autos brauchen jetzt nur noch 2 Minuten, um auf die andere Seite von der Schlucht zu kommen. Bisher waren es 2 Stunden. Die chinesischen Behörden sagen: Die Brücke hilft den Firmen und den Menschen in der Region. Es hat etwas mehr als 3 Jahre gedauert, die Brücke zu bauen. Sie hat umgerechnet etwa 240 Millionen Euro gekostet.
+Die Provinz Guizhou ist eine bergige Region im Süd-Westen von China. Es gibt dort mehrere Brücken in großer Höhe. Bisher war die Beipanjiang-Brücke die höchste: Sie führt in 565 Metern Höhe über ein Tal.
+Wörter-Buch
+China
+China ist ein großes Land in Asien. In China leben über 1,4 Milliarden Menschen, also über 1.400 Millionen. Die Hauptstadt von China heißt Peking. Die meisten Menschen in China sprechen Chinesisch. Es gibt aber auch noch viele andere Sprachen. China hat eine sehr starke Wirtschaft. Das Land verkauft seine Produkte in viele Länder auf der Welt.
+processed content: China ist ein großes Land in Asien. In China leben über 1,4 Milliarden Menschen, also über 1.400 Millionen. Die Hauptstadt von China heißt Peking. Die meisten Menschen in China sprechen Chinesisch. Es gibt aber auch noch viele andere Sprachen. China hat eine sehr starke Wirtschaft. Das Land verkauft seine Produkte in viele Länder auf der Welt.
+- if there are multiple sections look for the content that matchews with the artikel title!

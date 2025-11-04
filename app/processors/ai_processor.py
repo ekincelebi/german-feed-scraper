@@ -9,7 +9,7 @@ from typing import Dict, List, Any, Optional
 from groq import Groq
 from app.database import get_db
 from app.utils.logger import get_logger
-from app.config import settings
+from app.settings import settings
 
 logger = get_logger(__name__)
 
