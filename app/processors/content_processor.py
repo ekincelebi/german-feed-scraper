@@ -294,12 +294,8 @@ Return ONLY the cleaned article text in German. Start directly with the article 
         processed = self.db_client.table("processed_content").select("article_id").execute()
         processed_ids = {item['article_id'] for item in processed.data}
 
-        # Fetch unprocessed articles
+        # Fetch ALL articles (we'll filter and limit after)
         query = self.db_client.table("articles").select("id, title, content, theme")
-
-        if limit:
-            query = query.limit(limit * 2)  # Fetch extra in case some are already processed
-
         articles = query.execute()
 
         if not articles.data:
@@ -312,6 +308,7 @@ Return ONLY the cleaned article text in German. Start directly with the article 
             if item['id'] not in processed_ids and item.get('content')
         ]
 
+        # Apply limit AFTER filtering (so we get the requested number of unprocessed articles)
         if limit:
             articles_to_process = articles_to_process[:limit]
 
@@ -425,12 +422,8 @@ Return ONLY the cleaned article text in German. Start directly with the article 
         processed = self.db_client.table("processed_content").select("article_id").execute()
         processed_ids = {item['article_id'] for item in processed.data}
 
-        # Fetch unprocessed articles
+        # Fetch ALL articles (we'll filter and limit after)
         query = self.db_client.table("articles").select("id, title, content, theme")
-
-        if limit:
-            query = query.limit(limit * 2)  # Fetch extra in case some are already processed
-
         articles = query.execute()
 
         if not articles.data:
@@ -443,6 +436,7 @@ Return ONLY the cleaned article text in German. Start directly with the article 
             if item['id'] not in processed_ids and item.get('content')
         ]
 
+        # Apply limit AFTER filtering (so we get the requested number of unprocessed articles)
         if limit:
             articles_to_process = articles_to_process[:limit]
 
