@@ -84,6 +84,49 @@ python scripts/process_article_content.py --limit 50 --max-cost 5.0 --rate-limit
 
 ---
 
+### Command 3: Enhance for Learning (NEW!)
+```bash
+# Enhance 10 articles with educational annotations (parallel mode)
+python scripts/enhance_for_learning.py --limit 10 --max-cost 1.0 --parallel --workers 5 --rate-limit 0.1
+```
+
+**What it does:**
+- Adds educational annotations for B1-B2 German learners
+- Extracts 10-15 key vocabulary words with:
+  - Article (der/die/das) and plural forms for nouns
+  - English translation
+  - German explanation
+  - Context sentence from article
+  - CEFR level (B1/B2/C1)
+- Identifies 3-5 grammar patterns with examples
+- Adds 2-3 cultural context notes
+- Creates 3-5 comprehension questions in German
+- Estimates difficulty level and reading time
+- Uses 5 parallel workers for speed
+- Budget control: stops at cost limit
+- Saves to Supabase `learning_enhancements` table
+
+**Expected Performance:**
+- ~10 articles in 7-10 seconds
+- Cost: ~$0.017 (10 articles × $0.0017)
+
+**Vocabulary Selection:**
+- ✓ Avoids obvious cognates (Account, Computer, Funktion)
+- ✓ Avoids basic A1-A2 words
+- ✓ Prioritizes domain-specific terms and advanced verbs
+- ✓ Focuses on words essential for comprehension
+
+**Progress Logging:**
+- Shows real-time progress for EVERY article
+- Displays: article count, cost, rate, and ETA
+- Example: `✓ [3/10] Enhanced: Article... | Cost: $0.0048 | Rate: 1.38/sec | ETA: 0.1min`
+
+**Note:**
+- Process articles AFTER cleaning them with Command 2
+- Requires cleaned content in `processed_content` table
+
+---
+
 ## ⚙️ Configuration Requirements
 
 ### 1. Environment Variables (.env)
@@ -161,6 +204,50 @@ CREATE TABLE processed_content (
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     UNIQUE(article_id)
 );
+```
+
+### Learning Enhancements Table (NEW!)
+```sql
+CREATE TABLE learning_enhancements (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    article_id UUID REFERENCES articles(id) ON DELETE CASCADE,
+
+    -- Vocabulary with article, plural, translations
+    vocabulary_annotations JSONB NOT NULL DEFAULT '[]'::jsonb,
+
+    -- Grammar patterns with examples
+    grammar_patterns JSONB NOT NULL DEFAULT '[]'::jsonb,
+
+    -- Cultural context notes
+    cultural_notes TEXT[] DEFAULT ARRAY[]::TEXT[],
+
+    -- Comprehension questions in German
+    comprehension_questions JSONB NOT NULL DEFAULT '[]'::jsonb,
+
+    -- Metadata
+    estimated_difficulty VARCHAR(10),
+    estimated_reading_time INTEGER,
+    processing_tokens INTEGER,
+    processing_cost_usd DECIMAL(10, 6),
+    model_used VARCHAR(100),
+
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    UNIQUE(article_id)
+);
+```
+
+**Vocabulary JSON Structure:**
+```json
+{
+  "word": "Bundestag",
+  "article": "der",
+  "plural": "die Bundestage",
+  "context": "Der Bundestag hat heute ein neues Gesetz verabschiedet.",
+  "english_translation": "German federal parliament",
+  "german_explanation": "Das deutsche Parlament, wo Gesetze gemacht werden",
+  "cefr_level": "B1"
+}
 ```
 
 ---
@@ -241,12 +328,19 @@ cat .env | grep GROQ_API_KEY
 | Task | Articles | Time | Cost | Workers |
 |------|----------|------|------|---------|
 | **Fetch** | 100 | ~30s | Free | 15 |
-| **Process** (parallel) | 100 | ~30s | $0.14 | 10 |
-| **Process** (sequential) | 100 | ~150s | $0.14 | 1 |
+| **Clean** (parallel) | 100 | ~30s | $0.14 | 10 |
+| **Enhance** (parallel) | 100 | ~70s | $0.17 | 5 |
 
-**Daily Pipeline:**
+**Daily Pipeline (with Learning Enhancement):**
 - Fetch 100 articles: ~30 seconds
-- Process 100 articles: ~30 seconds
+- Clean 100 articles: ~30 seconds
+- Enhance 100 articles: ~70 seconds
+- **Total: ~2 minutes**
+- **Cost: ~$0.31/day or ~$9.30/month**
+
+**Basic Pipeline (without Learning Enhancement):**
+- Fetch 100 articles: ~30 seconds
+- Clean 100 articles: ~30 seconds
 - **Total: ~1 minute**
 - **Cost: ~$0.14/day or ~$4/month**
 
@@ -261,12 +355,17 @@ source venv/bin/activate
 # 2. Fetch yesterday's articles (parallel)
 python scripts/fetch_yesterday_articles.py --workers 15
 
-# 3. Process fetched articles (parallel)
+# 3. Clean fetched articles (parallel)
 python scripts/process_article_content.py --limit 100 --max-cost 5.0 --rate-limit 1.0 --parallel --workers 10
 
-# 4. Check results in Supabase
+# 4. Enhance for learning (parallel) - NEW!
+python scripts/enhance_for_learning.py --limit 100 --max-cost 2.0 --parallel --workers 5 --rate-limit 0.1
+
+# 5. Check results in Supabase
 # - articles table: raw fetched articles
 # - processed_content table: cleaned articles
+# - learning_enhancements table: educational annotations
+# - article_learning_view: complete learning view
 ```
 
 ---
