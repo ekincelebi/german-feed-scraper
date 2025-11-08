@@ -294,8 +294,8 @@ Return ONLY the cleaned article text in German. Start directly with the article 
         processed = self.db_client.table("processed_content").select("article_id").execute()
         processed_ids = {item['article_id'] for item in processed.data}
 
-        # Fetch ALL articles (we'll filter and limit after)
-        query = self.db_client.table("articles").select("id, title, content, theme")
+        # Fetch ALL articles ordered by newest first (we'll filter and limit after)
+        query = self.db_client.table("articles").select("id, title, content, theme").order("created_at", desc=True)
         articles = query.execute()
 
         if not articles.data:
@@ -422,8 +422,8 @@ Return ONLY the cleaned article text in German. Start directly with the article 
         processed = self.db_client.table("processed_content").select("article_id").execute()
         processed_ids = {item['article_id'] for item in processed.data}
 
-        # Fetch ALL articles (we'll filter and limit after)
-        query = self.db_client.table("articles").select("id, title, content, theme")
+        # Fetch ALL articles ordered by newest first (we'll filter and limit after)
+        query = self.db_client.table("articles").select("id, title, content, theme").order("created_at", desc=True)
         articles = query.execute()
 
         if not articles.data:

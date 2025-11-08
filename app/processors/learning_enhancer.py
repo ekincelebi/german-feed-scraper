@@ -328,16 +328,20 @@ Return ONLY this JSON structure:
         articles_with_content = []
         for item in query.data:
             if item['article_id'] not in enhanced_ids and item.get('cleaned_content'):
-                # Get article metadata
-                article_query = self.db_client.table("articles").select("id, title, theme").eq("id", item['article_id']).execute()
+                # Get article metadata with created_at for sorting
+                article_query = self.db_client.table("articles").select("id, title, theme, created_at").eq("id", item['article_id']).execute()
                 if article_query.data:
                     article = article_query.data[0]
                     articles_with_content.append({
                         'id': article['id'],
                         'title': article.get('title', 'Untitled'),
                         'theme': article.get('theme', 'general'),
-                        'cleaned_content': item['cleaned_content']
+                        'cleaned_content': item['cleaned_content'],
+                        'created_at': article.get('created_at')
                     })
+
+        # Sort by created_at descending (newest first)
+        articles_with_content.sort(key=lambda x: x.get('created_at', ''), reverse=True)
 
         # Apply limit AFTER filtering
         if limit:
