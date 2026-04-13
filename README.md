@@ -117,6 +117,22 @@ pre-commit install
 pre-commit run --all-files
 ```
 
+### Run Read-Only API (for frontend access)
+
+Expose article data to your frontend through backend endpoints only:
+
+```bash
+uvicorn app.api.main:app --host 0.0.0.0 --port 8000 --reload
+```
+
+Available endpoints:
+- `GET /health`
+- `GET /api/articles?limit=20&offset=0&domain=tagesschau.de&difficulty=B1`
+- `GET /api/articles/{id}`
+
+Frontend integration guide:
+- [docs/FRONTEND_ARTICLE_READ_GUIDE.md](docs/FRONTEND_ARTICLE_READ_GUIDE.md)
+
 ## Usage
 
 ### Recommended Workflow (Most Users)
@@ -522,6 +538,8 @@ The scraper is configured to discover feeds from these German websites:
 | `GROQ_API_KEY` | Groq API key for AI processing | - | For AI features |
 | `LOG_LEVEL` | Logging level (DEBUG, INFO, ERROR) | INFO | No |
 | `SCRAPE_INTERVAL` | Minutes between scrapes (for future scheduling) | 60 | No |
+| `FRONTEND_ORIGINS` | Comma-separated allowed browser origins for API CORS | `http://localhost:3000` | For API |
+| `API_RATE_LIMIT_PER_MINUTE` | Basic per-IP GET cap for API | `120` | For API |
 
 ## Scraping Strategies
 

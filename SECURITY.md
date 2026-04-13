@@ -148,4 +148,6 @@ jobs:
 - Never paste service role keys into issues, PRs, or chat.
 - Prefer fail-closed behavior when configuration is missing.
 - Validate and sanitize external content before downstream processing.
+- Keep frontend data access read-only through backend `GET /api/*` endpoints.
+- Do not expose `POST/PUT/PATCH/DELETE` routes to untrusted clients.
 
