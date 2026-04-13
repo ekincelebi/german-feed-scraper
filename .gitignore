@@ -26,6 +26,16 @@ wheels/
 # Environment variables
 .env
 .env.local
+.env.*
+!.env.example
+
+# Secrets and key material
+*.pem
+*.key
+*.p12
+*.pfx
+secrets/
+credentials/
 
 # IDE
 .vscode/

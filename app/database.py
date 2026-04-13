@@ -21,7 +21,9 @@ class SupabaseDatabase:
                 )
                 logger.info("Successfully connected to Supabase")
             except Exception as e:
-                logger.error(f"Failed to connect to Supabase: {e}")
+                # Avoid logging raw exception text that may contain sensitive details.
+                logger.error("Failed to connect to Supabase. Check configuration and network access.")
+                logger.debug("Supabase connection error detail: %s", e, exc_info=True)
                 raise
         return self.client
 

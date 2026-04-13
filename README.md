@@ -90,6 +90,33 @@ You can verify the tables were created correctly:
 2. You should see two tables: `feeds` and `articles`
 3. Click on each to see their structure
 
+## Security
+
+- Review and follow the full security playbook in [SECURITY.md](SECURITY.md)
+- Keep `.env` local only; never commit real `SUPABASE_KEY` or `GROQ_API_KEY`
+- Use `service_role` only in trusted backend runtime; never in client-side code
+- Rotate API keys immediately if they are exposed
+
+### Local Security Checks
+
+Run security checks before opening a PR:
+
+```bash
+python -m pip install pip-audit
+pip-audit
+gitleaks detect --source . --verbose
+```
+
+### Pre-commit Secret Scanning (Recommended)
+
+Enable local secret scanning before every commit:
+
+```bash
+python -m pip install pre-commit
+pre-commit install
+pre-commit run --all-files
+```
+
 ## Usage
 
 ### Recommended Workflow (Most Users)
