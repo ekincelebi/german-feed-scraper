@@ -26,6 +26,7 @@ class LearningEnhancer:
     # Model configuration
     MODEL = "llama-3.3-70b-versatile"
     MAX_TOKENS = 3000  # For JSON output with annotations
+    ESTIMATED_COST_PER_ARTICLE_USD = 0.01
 
     def __init__(self, api_key: Optional[str] = None, max_retries: int = 3, retry_delay: int = 2):
         """
@@ -53,6 +54,12 @@ class LearningEnhancer:
 
         # Thread safety for parallel processing
         self.stats_lock = Lock()
+        self.in_flight_tasks = 0
+
+    @staticmethod
+    def _is_duplicate_error(error: Exception) -> bool:
+        error_text = str(error).lower()
+        return "duplicate key value" in error_text or "23505" in error_text
 
     def _create_enhancement_prompt(self, cleaned_content: str, title: str, theme: str) -> str:
         """
@@ -202,12 +209,6 @@ Return ONLY this JSON structure:
                     logger.warning(f"Article {article_id} has insufficient content, skipping")
                     return None
 
-                # Check if already enhanced
-                existing = self.db_client.table("learning_enhancements").select("id").eq("article_id", article_id).execute()
-                if existing.data:
-                    logger.info(f"Article {article_id} already enhanced, skipping")
-                    return None
-
                 # Create prompt
                 prompt = self._create_enhancement_prompt(cleaned_content, title, theme)
 
@@ -239,19 +240,13 @@ Return ONLY this JSON structure:
                 total_tokens = response.usage.total_tokens
                 cost = self._calculate_cost(input_tokens, output_tokens)
 
-                # Update statistics (thread-safe)
-                with self.stats_lock:
-                    self.total_articles_processed += 1
-                    self.total_tokens_used += total_tokens
-                    self.total_cost_usd += cost
-
                 # Prepare database record
                 result = {
                     'article_id': article_id,
-                    'vocabulary_annotations': json.dumps(enhancement_data.get('key_vocabulary', [])),
-                    'grammar_patterns': json.dumps(enhancement_data.get('grammar_patterns', [])),
+                    'vocabulary_annotations': enhancement_data.get('key_vocabulary', []),
+                    'grammar_patterns': enhancement_data.get('grammar_patterns', []),
                     'cultural_notes': enhancement_data.get('cultural_notes', []),
-                    'comprehension_questions': json.dumps(enhancement_data.get('comprehension_questions', [])),
+                    'comprehension_questions': enhancement_data.get('comprehension_questions', []),
                     'estimated_difficulty': enhancement_data.get('estimated_difficulty', 'B2'),
                     'estimated_reading_time': enhancement_data.get('estimated_reading_time', 5),
                     'processing_tokens': total_tokens,
@@ -260,7 +255,19 @@ Return ONLY this JSON structure:
                 }
 
                 # Save to database
-                self.db_client.table("learning_enhancements").insert(result).execute()
+                try:
+                    self.db_client.table("learning_enhancements").insert(result).execute()
+                except Exception as db_error:
+                    if self._is_duplicate_error(db_error):
+                        logger.info(f"Article {article_id} was enhanced concurrently, skipping")
+                        return None
+                    raise
+
+                # Update statistics only after successful insert
+                with self.stats_lock:
+                    self.total_articles_processed += 1
+                    self.total_tokens_used += total_tokens
+                    self.total_cost_usd += cost
 
                 logger.info(
                     f"Enhanced article {article_id}: "
@@ -317,6 +324,7 @@ Return ONLY this JSON structure:
         self.total_tokens_used = 0
         self.total_cost_usd = 0.0
         self.failed_articles = []
+        self.in_flight_tasks = 0
 
         # Get all articles that have been cleaned but not yet enhanced
         enhanced = self.db_client.table("learning_enhancements").select("article_id").execute()
@@ -362,9 +370,16 @@ Return ONLY this JSON structure:
 
             for idx, article in enumerate(articles_with_content, 1):
                 # Check budget before submitting
-                if self.total_cost_usd >= max_cost_usd:
-                    logger.warning(f"Reached budget limit of ${max_cost_usd:.2f}, stopping submission")
-                    break
+                with self.stats_lock:
+                    projected_cost = self.total_cost_usd + (
+                        (self.in_flight_tasks + 1) * self.ESTIMATED_COST_PER_ARTICLE_USD
+                    )
+                    if projected_cost >= max_cost_usd:
+                        logger.warning(
+                            f"Reached projected budget limit of ${max_cost_usd:.2f}, stopping submission"
+                        )
+                        break
+                    self.in_flight_tasks += 1
 
                 article_id = article['id']
                 title = article['title']
@@ -414,6 +429,9 @@ Return ONLY this JSON structure:
                         logger.warning(f"⊘ [{completed_count}/{len(futures)}] Skipped: {title[:50]}...")
                 except Exception as e:
                     logger.error(f"✗ [{completed_count}/{len(futures)}] Error: {title[:50]}...: {e}")
+                finally:
+                    with self.stats_lock:
+                        self.in_flight_tasks = max(0, self.in_flight_tasks - 1)
 
         elapsed_time = time.time() - start_time
 

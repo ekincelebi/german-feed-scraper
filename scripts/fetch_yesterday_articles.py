@@ -26,6 +26,32 @@ from app.scrapers.ordering_strategy import FeedOrderingStrategy
 logger = get_logger(__name__)
 
 
+def normalize_to_utc(entry_date: Optional[datetime]) -> Optional[datetime]:
+    """Normalize parsed date to timezone-aware UTC."""
+    if not entry_date:
+        return None
+    if entry_date.tzinfo is None:
+        return entry_date.replace(tzinfo=timezone.utc)
+    return entry_date.astimezone(timezone.utc)
+
+
+def parse_entry_date(entry) -> Optional[datetime]:
+    """Parse published/updated feed entry datetime safely."""
+    raw_date = getattr(entry, "published", None) or getattr(entry, "updated", None)
+    if not raw_date:
+        return None
+    try:
+        return normalize_to_utc(parsedate_to_datetime(raw_date))
+    except Exception:
+        return None
+
+
+def is_duplicate_error(error: Exception) -> bool:
+    """Detect database duplicate key errors from Supabase/Postgres."""
+    error_text = str(error).lower()
+    return "duplicate key value" in error_text or "23505" in error_text
+
+
 def is_from_yesterday(entry_date: datetime, reference_date: datetime = None) -> bool:
     """Check if an entry was published yesterday."""
     if reference_date is None:
@@ -46,6 +72,7 @@ class ParallelYesterdayFetcher:
         self.max_workers = max_workers
         self.max_per_domain = max_per_domain
         self.domain_semaphores: Dict[str, Semaphore] = {}
+        self.domain_lock = Lock()
         self.stats_lock = Lock()
         self.stats = {
             "feeds_processed": 0,
@@ -59,9 +86,10 @@ class ParallelYesterdayFetcher:
 
     def _get_domain_semaphore(self, domain: str) -> Semaphore:
         """Get or create semaphore for domain."""
-        if domain not in self.domain_semaphores:
-            self.domain_semaphores[domain] = Semaphore(self.max_per_domain)
-        return self.domain_semaphores[domain]
+        with self.domain_lock:
+            if domain not in self.domain_semaphores:
+                self.domain_semaphores[domain] = Semaphore(self.max_per_domain)
+            return self.domain_semaphores[domain]
 
     def _update_stats(self, **kwargs):
         """Thread-safe stats update."""
@@ -109,17 +137,7 @@ class ParallelYesterdayFetcher:
             reference_date = datetime.now(timezone.utc)
 
             for entry in feed.entries:
-                published_date = None
-                if hasattr(entry, "published"):
-                    try:
-                        published_date = parsedate_to_datetime(entry.published)
-                    except:
-                        pass
-                elif hasattr(entry, "updated"):
-                    try:
-                        published_date = parsedate_to_datetime(entry.updated)
-                    except:
-                        pass
+                published_date = parse_entry_date(entry)
 
                 if published_date and is_from_yesterday(published_date, reference_date):
                     yesterday_entries.append(entry)
@@ -137,73 +155,77 @@ class ParallelYesterdayFetcher:
             db_client = get_db()
 
             for i, entry in enumerate(yesterday_entries, 1):
-                article_url = entry.get("link", "")
-                if not article_url:
-                    continue
-
-                title = entry.get("title", "Untitled")
-
-                # Check if exists
-                existing = db_client.table("articles").select("id").eq("url", article_url).execute()
-                if existing.data:
-                    result["articles_existed"] += 1
-                    continue
-
-                # Extract content
-                extraction_result = extractor.extract(article_url)
-
-                full_content = None
-
-                if extraction_result.get("error"):
-                    if extraction_result.get("skip"):
+                try:
+                    article_url = entry.get("link", "")
+                    if not article_url:
                         continue
-                    elif extraction_result.get("use_rss_content"):
+
+                    title = entry.get("title", "Untitled")
+
+                    # Check if exists
+                    existing = db_client.table("articles").select("id").eq("url", article_url).execute()
+                    if existing.data:
+                        result["articles_existed"] += 1
+                        continue
+
+                    # Extract content
+                    extraction_result = extractor.extract(article_url)
+
+                    full_content = None
+
+                    if extraction_result.get("error"):
+                        if extraction_result.get("skip"):
+                            continue
+                        elif extraction_result.get("use_rss_content"):
+                            rss_content = entry.get("summary") or entry.get("description") or ""
+                            if rss_content and len(rss_content) > 50:
+                                full_content = rss_content
+                            else:
+                                continue
+                        else:
+                            continue
+                    else:
+                        full_content = extraction_result.get("content", "")
+
+                    # Fallback to RSS
+                    if not full_content or len(full_content) < 100:
                         rss_content = entry.get("summary") or entry.get("description") or ""
                         if rss_content and len(rss_content) > 50:
                             full_content = rss_content
                         else:
                             continue
-                    else:
-                        continue
-                else:
-                    full_content = extraction_result.get("content", "")
 
-                # Fallback to RSS
-                if not full_content or len(full_content) < 100:
-                    rss_content = entry.get("summary") or entry.get("description") or ""
-                    if rss_content and len(rss_content) > 50:
-                        full_content = rss_content
-                    else:
-                        continue
+                    # Get metadata
+                    published_date = parse_entry_date(entry)
+                    author = entry.get("author", None)
 
-                # Get metadata
-                published_date = None
-                if hasattr(entry, "published"):
+                    # Save article
+                    article_data = {
+                        "url": article_url,
+                        "title": extraction_result.get("title") or title,
+                        "content": full_content,
+                        "published_date": published_date.isoformat() if published_date else None,
+                        "author": author,
+                        "source_feed": feed_url,
+                        "source_domain": domain,
+                        "theme": theme,
+                        "created_at": datetime.now(timezone.utc).isoformat(),
+                        "updated_at": datetime.now(timezone.utc).isoformat()
+                    }
+
                     try:
-                        published_date = parsedate_to_datetime(entry.published)
-                    except:
-                        pass
+                        db_client.table("articles").insert(article_data).execute()
+                    except Exception as db_error:
+                        if is_duplicate_error(db_error):
+                            result["articles_existed"] += 1
+                            continue
+                        raise
 
-                author = entry.get("author", None)
-
-                # Save article
-                article_data = {
-                    "url": article_url,
-                    "title": extraction_result.get("title") or title,
-                    "content": full_content,
-                    "published_date": published_date.isoformat() if published_date else None,
-                    "author": author,
-                    "source_feed": feed_url,
-                    "source_domain": domain,
-                    "theme": theme,
-                    "created_at": datetime.now(timezone.utc).isoformat(),
-                    "updated_at": datetime.now(timezone.utc).isoformat()
-                }
-
-                db_client.table("articles").insert(article_data).execute()
-
-                result["articles_saved"] += 1
-                result["total_chars"] += len(full_content)
+                    result["articles_saved"] += 1
+                    result["total_chars"] += len(full_content)
+                except Exception as article_error:
+                    logger.warning(f"  Skipping article {i}/{len(yesterday_entries)} due to error: {article_error}")
+                    continue
 
             extractor.close()
 
@@ -323,6 +345,13 @@ def main():
     args = parser.parse_args()
 
     try:
+        if args.workers <= 0:
+            raise ValueError("--workers must be greater than 0")
+        if args.max_per_domain <= 0:
+            raise ValueError("--max-per-domain must be greater than 0")
+        if args.limit is not None and args.limit <= 0:
+            raise ValueError("--limit must be greater than 0 when provided")
+
         # Get feeds from config
         feeds = list(FEED_SOURCES)
 

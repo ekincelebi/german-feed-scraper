@@ -14,14 +14,15 @@ def get_logger(name: str) -> logging.Logger:
         Configured logger instance
     """
     logger = logging.getLogger(name)
+    log_level = getattr(logging, settings.normalized_log_level, logging.INFO)
 
     # Only add handlers if not already configured
     if not logger.handlers:
-        logger.setLevel(getattr(logging, settings.log_level.upper()))
+        logger.setLevel(log_level)
 
         # Console handler
         handler = logging.StreamHandler(sys.stdout)
-        handler.setLevel(getattr(logging, settings.log_level.upper()))
+        handler.setLevel(log_level)
 
         # Formatter
         formatter = logging.Formatter(

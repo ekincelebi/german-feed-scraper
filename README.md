@@ -244,9 +244,9 @@ python scripts/scrape_full_content.py --sequential
 
 **For detailed comparison of scraping strategies, see:** [docs/SCRAPING_STRATEGIES.md](docs/SCRAPING_STRATEGIES.md)
 
-### Step 4: Process Articles with AI for Language Learning (Optional)
+### Step 4: Clean Article Content for Language Learners (Optional)
 
-After scraping articles, you can enhance them with AI-powered analysis for language learning purposes using Groq's Llama 3.1 70B model.
+After scraping articles, clean and optimize article text for learners with `process_article_content.py` (Groq Llama 3.3 70B).
 
 #### Get Groq API Key
 
@@ -258,129 +258,46 @@ After scraping articles, you can enhance them with AI-powered analysis for langu
 GROQ_API_KEY=your-groq-api-key-here
 ```
 
-#### Run Database Migration
+#### Run Database Migrations
 
-Before processing, create the `article_analysis` table:
+Before AI processing, run the migrations that create cleaned content and learning tables/views:
 
 1. In Supabase, go to **SQL Editor**
 2. Click "New query"
-3. Copy the contents of [supabase/migrations/002_article_analysis.sql](supabase/migrations/002_article_analysis.sql)
-4. Paste and click "Run"
-
-This creates the `article_analysis` table with foreign key to `articles`.
+3. Run [supabase/migrations/003_processed_content.sql](supabase/migrations/003_processed_content.sql)
+4. Run [supabase/migrations/007_simplify_processed_content.sql](supabase/migrations/007_simplify_processed_content.sql)
+5. Run [supabase/migrations/008_learning_enhancements.sql](supabase/migrations/008_learning_enhancements.sql)
+6. Run [supabase/migrations/009_cleanup_unused_tables.sql](supabase/migrations/009_cleanup_unused_tables.sql)
+7. Run [supabase/migrations/010_recreate_learning_views.sql](supabase/migrations/010_recreate_learning_views.sql)
 
 #### Process Articles
 
-The AI processor extracts language learning features from articles:
+The content processor removes scraping noise while preserving article meaning and level:
 
-**Features Analyzed:**
-- **Language Level (CEFR)**: A1-C2 classification
-- **Topics**: Main topics covered (politics, technology, health, etc.)
-- **Vocabulary**: 5-15 key words with artikel (der/die/das), English translation, and plural form
-- **Grammar Patterns**: Key grammar structures worth learning
+**What Cleaning Does:**
+- Removes HTML artifacts, boilerplate, and promotions
+- Preserves vocabulary, grammar, and factual content
+- Keeps text in German and improves readability
 
 **Test with 100 articles (recommended first):**
 ```bash
-python scripts/process_articles.py --limit 100
+python scripts/process_article_content.py --limit 100 --parallel --workers 10
 ```
 
 **Process all articles:**
 ```bash
-python scripts/process_articles.py
+python scripts/process_article_content.py --parallel --workers 10
 ```
 
 **Custom budget:**
 ```bash
 # Process with $2.50 budget
-python scripts/process_articles.py --max-cost 2.50
-```
-
-**Cost Estimates (Groq Llama 3.1 70B):**
-- Average: ~$0.0006 per article
-- 100 articles: ~$0.06
-- 1,444 articles: ~$0.91
-- Default budget: $5.00
-
-Expected output:
-```
-===============================================================================
-AI ARTICLE PROCESSOR FOR LANGUAGE LEARNING
-===============================================================================
-Model: Llama 3.1 70B (via Groq)
-Budget: $5.00 USD
-Rate limit: 0.5s between requests
-Max retries: 3
-Limit: 100 articles (testing mode)
-===============================================================================
-
-Processing article 1/100: 12345
-Processed article 12345: B2, 8 words, 1234 tokens, $0.0006
-
-Progress: 10/100 (10.0%) | Cost: $0.0059 | Rate: 2.3 articles/sec | ETA: 38s
-...
-===============================================================================
-PROCESSING COMPLETE!
-===============================================================================
-✓ Successfully processed: 100
-✗ Failed: 0
-
-📊 Statistics:
-  Total tokens: 123,456
-  Avg tokens/article: 1,235
-
-💰 Cost:
-  Total: $0.0598
-  Avg/article: $0.000598
-  Remaining budget: $4.9402
-===============================================================================
-```
-
-**Advanced Options:**
-```bash
-# Faster processing (less polite to API)
-python scripts/process_articles.py --rate-limit 0.2
-
-# More retries for unstable connections
-python scripts/process_articles.py --max-retries 5
-
-# See all options
-python scripts/process_articles.py --help
-```
-
-**Benefits for Language Learners:**
-- **Difficulty filtering**: Find articles matching your level (A1-C2)
-- **Topic-based learning**: Focus on subjects you care about
-- **Vocabulary building**: Learn words with proper grammar (artikel + plural)
-- **Contextual grammar**: See grammar patterns in real usage
-- **Smart recommendations**: Build recommendation systems based on analysis
-
-### Step 5: Clean Article Content for Language Learners
-
-After analyzing articles, you can clean and optimize the content to make it more suitable for language learners.
-
-#### What Content Cleaning Does:
-
-✅ **Removes noise**: HTML artifacts, ads, author bios, navigation elements
-✅ **Removes off-topic content**: Focuses on main topics identified in analysis
-✅ **Removes promotional text**: "Lesen Sie mehr", related article teasers, newsletter signups
-✅ **Fixes formatting**: Merged words, extra spaces, special characters
-✅ **Preserves language level**: Keeps original B1/B2/C1 vocabulary and grammar
-✅ **Preserves meaning**: No summarization, all important information kept
-
-**Test with 10 articles:**
-```bash
-python scripts/clean_content.py --limit 10
-```
-
-**Process all analyzed articles:**
-```bash
-python scripts/clean_content.py
+python scripts/process_article_content.py --max-cost 2.50 --parallel --workers 10
 ```
 
 **Cost Estimates (Groq Llama 3.3 70B):**
 - Average: ~$0.0012 per article
 - 100 articles: ~$0.12
-- 1,444 articles: ~$1.69
 - Default budget: $5.00
 
 Expected output:
@@ -396,55 +313,114 @@ Limit: 100 articles (testing mode)
 ===============================================================================
 
 Processing article 1/100: ca8084fb-0357-4fcc-afb9-37c25a45b264
-Processed article ca8084fb-0357-4fcc-afb9-37c25a45b264: 135→131 words (-3.0%)
+Processed article ca8084fb-0357-4fcc-afb9-37c25a45b264: 1300 chars, 1720 tokens, $0.0012
 
-Progress: 10/100 (10.0%) | Cost: $0.0090 | Avg reduction: 16 words
+Progress: 10/100 (10.0%) | Cost: $0.0059 | Rate: 2.3 articles/sec | ETA: 38s
 ...
 ===============================================================================
 CONTENT PROCESSING COMPLETE!
+===============================================================================
+✓ Successfully processed: 100
+✗ Failed: 0
+
+📊 Statistics:
+  Total tokens: 123,456
+  Avg tokens/article: 1,235
+
+💰 Cost:
+  Total: $0.1200
+  Avg/article: $0.001200
+  Remaining budget: $4.8800
+===============================================================================
+```
+
+**Advanced Options:**
+```bash
+# Faster processing (less polite to API)
+python scripts/process_article_content.py --rate-limit 0.2 --parallel --workers 10
+
+# More retries for unstable connections
+python scripts/process_article_content.py --max-retries 5 --parallel --workers 10
+
+# See all options
+python scripts/process_article_content.py --help
+```
+
+### Step 5: Enhance for Learning (Optional)
+
+After content cleaning, enrich articles with vocabulary, grammar, and cultural annotations for learners.
+
+#### What Learning Enhancement Adds:
+
+✅ **Vocabulary annotations**: 10-15 key terms with context and CEFR level  
+✅ **Grammar patterns**: 3-5 patterns with examples from the article  
+✅ **Cultural notes**: short context explanations for German usage and institutions  
+✅ **Comprehension questions**: 3-5 German questions to support active reading  
+✅ **Difficulty estimation**: CEFR level + reading time estimate
+
+**Test with 10 articles:**
+```bash
+python scripts/enhance_for_learning.py --limit 10 --max-cost 1.0 --parallel --workers 5
+```
+
+**Process all cleaned articles:**
+```bash
+python scripts/enhance_for_learning.py --parallel --workers 5
+```
+
+**Cost Estimates (Groq Llama 3.3 70B):**
+- Average: ~$0.0017 per article
+- 100 articles: ~$0.17
+- Default budget: $5.00
+
+Expected output:
+```
+===============================================================================
+LEARNING ENHANCEMENT PROCESSOR
+===============================================================================
+Model: Llama 3.3 70B (via Groq)
+Budget: $5.00 USD
+Rate limit: 0.5s between requests
+Max retries: 3
+Limit: 100 articles (testing mode)
+===============================================================================
+
+Submitting article 1/100: Energiepreise in Deutschland...
+Enhanced article ca8084fb-0357-4fcc-afb9-37c25a45b264: difficulty=B2, 12 vocab words, 2100 tokens, $0.0018
+
+Progress: 10/100 (10.0%) | Cost: $0.0180 | Rate: 1.8 articles/sec | ETA: 0.8 min
+...
+===============================================================================
+LEARNING ENHANCEMENT COMPLETE!
 ===============================================================================
 ✓ Successfully processed: 99
 ✗ Failed: 1
 
 📊 Statistics:
   Total tokens: 170,234
-  Avg tokens/article: 1,720
-  Total words removed: 44,550
-  Avg words removed/article: 450
+  Avg tokens/article: 2,100
 
 💰 Cost:
-  Total: $0.1161
-  Avg/article: $0.001173
-  Remaining budget: $4.8839
+  Total: $0.1700
+  Avg/article: $0.001700
+  Remaining budget: $4.8300
 ===============================================================================
 ```
 
 **Advanced Options:**
 ```bash
 # Custom budget
-python scripts/clean_content.py --max-cost 2.50
+python scripts/enhance_for_learning.py --max-cost 2.50 --parallel --workers 5
 
 # Faster processing
-python scripts/clean_content.py --rate-limit 0.3
+python scripts/enhance_for_learning.py --rate-limit 0.05 --parallel --workers 5
 
 # See all options
-python scripts/clean_content.py --help
+python scripts/enhance_for_learning.py --help
 ```
 
 **View cleaned articles in Supabase:**
 ```sql
--- Compare before and after
-SELECT
-    a.title,
-    pc.word_count_before,
-    pc.word_count_after,
-    pc.words_removed,
-    ROUND((pc.words_removed::float / pc.word_count_before * 100), 1) as reduction_pct
-FROM articles a
-JOIN processed_content pc ON a.id = pc.article_id
-ORDER BY pc.words_removed DESC
-LIMIT 10;
-
 -- View cleaned content
 SELECT a.title, pc.cleaned_content
 FROM articles a
@@ -454,45 +430,35 @@ LIMIT 5;
 
 **Complete Pipeline:**
 ```sql
--- Join all three tables for complete article data
+-- Join current learning pipeline tables
 SELECT
     a.title,
     a.url,
-    aa.language_level,
-    aa.topics,
-    aa.vocabulary,
-    aa.grammar_patterns,
+    le.estimated_difficulty,
+    le.vocabulary_annotations,
+    le.grammar_patterns,
     pc.cleaned_content,
-    pc.words_removed
+    le.comprehension_questions
 FROM articles a
-JOIN article_analysis aa ON a.id = aa.article_id
 JOIN processed_content pc ON a.id = pc.article_id
-WHERE aa.language_level = 'B1'
+JOIN learning_enhancements le ON a.id = le.article_id
+WHERE le.estimated_difficulty = 'B1'
 LIMIT 10;
 ```
 
 ### Step 6: View Statistics and Analytics
 
-Use the built-in statistics tool to analyze your scraped data:
+Use SQL views created by migrations for dashboard-style analytics:
 
-```bash
-# Show complete statistics report
-python scripts/show_stats.py
+```sql
+-- High-level aggregate metrics
+SELECT * FROM article_statistics;
 
-# Show recent articles from specific domain
-python scripts/show_stats.py --recent 10 --domain www.spiegel.de
+-- Browse-ready list rows
+SELECT * FROM article_list_view ORDER BY published_date DESC LIMIT 20;
 
-# Export statistics to JSON
-python scripts/show_stats.py --export-json stats.json
-
-# Export domain breakdown to CSV
-python scripts/show_stats.py --export-csv domains.csv
-
-# Show only feed statistics
-python scripts/show_stats.py --feeds-only
-
-# Show only article statistics
-python scripts/show_stats.py --articles-only
+-- Full learning payload rows
+SELECT * FROM article_learning_view ORDER BY published_date DESC LIMIT 10;
 ```
 
 ### Viewing Your Data
@@ -525,34 +491,31 @@ ORDER BY article_count DESC;
 ```
 german-feed-scraper/
 ├── app/
-│   ├── config.py              # Environment configuration
+│   ├── config/
+│   │   └── feed_config.py     # Feed sources
 │   ├── database.py            # Supabase connection
-│   ├── models/
-│   │   └── article.py         # Data models
+│   ├── settings.py            # Environment settings
 │   ├── scrapers/
-│   │   ├── feed_discovery.py  # Feed discovery using feedsearch.dev
-│   │   └── rss_scraper.py     # RSS feed scraping
-│   ├── processors/            # AI processing modules
-│   │   ├── ai_processor.py    # AI article analysis with Groq
-│   │   └── content_processor.py # Content cleaning for learners
-│   ├── analytics/             # Statistics and analytics
-│   │   └── statistics.py      # Database statistics module
+│   │   ├── content_extractors.py # Full-content extraction logic
+│   │   └── ordering_strategy.py  # Feed ordering strategies
+│   ├── processors/
+│   │   ├── content_processor.py  # Content cleaning
+│   │   └── learning_enhancer.py  # Learning annotations
 │   └── utils/
 │       └── logger.py          # Logging configuration
 ├── scripts/
-│   ├── discover_feeds.py      # Script to discover feeds
-│   ├── run_scraper.py         # Script to scrape articles (RSS only)
-│   ├── scrape_full_content.py # Script to scrape full content
-│   ├── process_articles.py    # Script to process articles with AI
-│   ├── clean_content.py       # Script to clean article content
-│   └── show_stats.py          # Script to display statistics
+│   ├── fetch_yesterday_articles.py # Fetch full articles from feeds
+│   ├── process_article_content.py # Script to clean article content
+│   └── enhance_for_learning.py    # Script to add learning annotations
 ├── docs/
 │   └── SCRAPING_STRATEGIES.md # Detailed scraping strategy documentation
 ├── supabase/
 │   └── migrations/
 │       ├── 001_initial_schema.sql     # Initial database schema
-│       ├── 002_article_analysis.sql   # AI analysis table
-│       └── 003_processed_content.sql  # Cleaned content table
+│       ├── 003_processed_content.sql  # Cleaned content table
+│       ├── 008_learning_enhancements.sql  # Learning enhancement table
+│       ├── 009_cleanup_unused_tables.sql  # Remove deprecated analysis table/views
+│       └── 010_recreate_learning_views.sql # Recreate frontend views on current schema
 ├── .env                       # Your environment variables (not in git)
 ├── .env.example              # Environment template
 ├── requirements.txt          # Python dependencies

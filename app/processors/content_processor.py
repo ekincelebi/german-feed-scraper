@@ -25,6 +25,7 @@ class ContentProcessor:
     # Model configuration
     MODEL = "llama-3.3-70b-versatile"
     MAX_TOKENS = 4000  # Higher limit for content output
+    ESTIMATED_COST_PER_ARTICLE_USD = 0.01
 
     def __init__(self, api_key: Optional[str] = None, max_retries: int = 3, retry_delay: int = 2):
         """
@@ -49,9 +50,15 @@ class ContentProcessor:
         self.total_tokens_used = 0
         self.total_cost_usd = 0.0
         self.failed_articles = []
+        self.in_flight_tasks = 0
 
         # Thread safety for parallel processing
         self.stats_lock = Lock()
+
+    @staticmethod
+    def _is_duplicate_error(error: Exception) -> bool:
+        error_text = str(error).lower()
+        return "duplicate key value" in error_text or "23505" in error_text
 
     def _create_cleaning_prompt(
         self,
@@ -181,12 +188,6 @@ Return ONLY the cleaned article text in German. Start directly with the article 
             logger.warning(f"Article {article_id} has insufficient content, skipping")
             return None
 
-        # Check if already processed
-        existing = self.db_client.table("processed_content").select("id").eq("article_id", article_id).execute()
-        if existing.data:
-            logger.info(f"Article {article_id} already processed, skipping")
-            return None
-
         for attempt in range(self.max_retries):
             try:
                 # Call Groq API
@@ -220,18 +221,13 @@ Return ONLY the cleaned article text in German. Start directly with the article 
                         continue
                     else:
                         logger.error(f"Failed to clean article {article_id} after {self.max_retries} attempts")
-                        self.failed_articles.append(article_id)
+                        with self.stats_lock:
+                            self.failed_articles.append(article_id)
                         return None
 
                 # Calculate cost
                 total_tokens = usage.total_tokens
                 cost = self._calculate_cost(usage.prompt_tokens, usage.completion_tokens)
-
-                # Update statistics (thread-safe)
-                with self.stats_lock:
-                    self.total_articles_processed += 1
-                    self.total_tokens_used += total_tokens
-                    self.total_cost_usd += cost
 
                 # Save to database (simplified schema)
                 result = {
@@ -242,7 +238,19 @@ Return ONLY the cleaned article text in German. Start directly with the article 
                     'model_used': self.MODEL
                 }
 
-                self.db_client.table("processed_content").insert(result).execute()
+                try:
+                    self.db_client.table("processed_content").insert(result).execute()
+                except Exception as db_error:
+                    if self._is_duplicate_error(db_error):
+                        logger.info(f"Article {article_id} was processed concurrently, skipping")
+                        return None
+                    raise
+
+                # Update statistics only after successful insert
+                with self.stats_lock:
+                    self.total_articles_processed += 1
+                    self.total_tokens_used += total_tokens
+                    self.total_cost_usd += cost
 
                 logger.info(
                     f"Processed article {article_id}: "
@@ -289,6 +297,7 @@ Return ONLY the cleaned article text in German. Start directly with the article 
         self.total_tokens_used = 0
         self.total_cost_usd = 0.0
         self.failed_articles = []
+        self.in_flight_tasks = 0
 
         # Get all articles that haven't been processed yet
         processed = self.db_client.table("processed_content").select("article_id").execute()
@@ -327,9 +336,16 @@ Return ONLY the cleaned article text in German. Start directly with the article 
 
             for i, article in enumerate(articles_to_process, 1):
                 # Check budget before submitting new tasks
-                if self.total_cost_usd >= max_cost_usd:
-                    logger.warning(f"Reached budget limit of ${max_cost_usd:.2f}, stopping submissions")
-                    break
+                with self.stats_lock:
+                    projected_cost = self.total_cost_usd + (
+                        (self.in_flight_tasks + 1) * self.ESTIMATED_COST_PER_ARTICLE_USD
+                    )
+                    if projected_cost >= max_cost_usd:
+                        logger.warning(
+                            f"Reached projected budget limit of ${max_cost_usd:.2f}, stopping submissions"
+                        )
+                        break
+                    self.in_flight_tasks += 1
 
                 article_id = article['id']
                 content = article.get('content', '')
@@ -365,6 +381,9 @@ Return ONLY the cleaned article text in German. Start directly with the article 
                         logger.warning(f"⊘ [{completed_count}/{len(futures)}] Skipped/Failed: {title[:50]}...")
                 except Exception as e:
                     logger.error(f"✗ [{completed_count}/{len(futures)}] Error processing {title[:50]}...: {e}")
+                finally:
+                    with self.stats_lock:
+                        self.in_flight_tasks = max(0, self.in_flight_tasks - 1)
 
                 # Progress update every 10 articles
                 if completed_count % 10 == 0:

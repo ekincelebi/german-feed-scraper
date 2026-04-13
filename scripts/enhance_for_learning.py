@@ -92,6 +92,17 @@ What it adds:
     args = parser.parse_args()
 
     try:
+        if args.limit is not None and args.limit <= 0:
+            raise ValueError("--limit must be greater than 0 when provided")
+        if args.max_cost < 0:
+            raise ValueError("--max-cost must be greater than or equal to 0")
+        if args.rate_limit < 0:
+            raise ValueError("--rate-limit must be greater than or equal to 0")
+        if args.max_retries <= 0:
+            raise ValueError("--max-retries must be greater than 0")
+        if args.parallel and args.workers <= 0:
+            raise ValueError("--workers must be greater than 0 when using --parallel")
+
         # Initialize learning enhancer
         logger.info("Initializing LearningEnhancer...")
         enhancer = LearningEnhancer(max_retries=args.max_retries)
