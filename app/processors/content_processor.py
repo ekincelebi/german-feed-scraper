@@ -26,6 +26,7 @@ class ContentProcessor:
     MODEL = "llama-3.3-70b-versatile"
     MAX_TOKENS = 4000  # Higher limit for content output
     ESTIMATED_COST_PER_ARTICLE_USD = 0.01
+    FETCH_BATCH_SIZE = 250
 
     def __init__(self, api_key: Optional[str] = None, max_retries: int = 3, retry_delay: int = 2):
         """
@@ -163,6 +164,49 @@ Return ONLY the cleaned article text in German. Start directly with the article 
         """Count words in text."""
         return len(text.split()) if text else 0
 
+    def _get_unprocessed_articles(self, limit: Optional[int] = None) -> List[Dict[str, Any]]:
+        """Fetch unprocessed articles in paginated batches to avoid full-table scans."""
+        collected: List[Dict[str, Any]] = []
+        offset = 0
+
+        while True:
+            upper = offset + self.FETCH_BATCH_SIZE - 1
+            articles_response = (
+                self.db_client
+                .table("articles")
+                .select("id, title, content, theme")
+                .order("created_at", desc=True)
+                .range(offset, upper)
+                .execute()
+            )
+            article_batch = articles_response.data or []
+            if not article_batch:
+                break
+
+            article_ids = [item["id"] for item in article_batch if item.get("id")]
+            processed_ids = set()
+            if article_ids:
+                processed_response = (
+                    self.db_client
+                    .table("processed_content")
+                    .select("article_id")
+                    .in_("article_id", article_ids)
+                    .execute()
+                )
+                processed_ids = {item["article_id"] for item in (processed_response.data or [])}
+
+            for item in article_batch:
+                if item.get("content") and item["id"] not in processed_ids:
+                    collected.append(item)
+                    if limit and len(collected) >= limit:
+                        return collected
+
+            if len(article_batch) < self.FETCH_BATCH_SIZE:
+                break
+            offset += self.FETCH_BATCH_SIZE
+
+        return collected
+
     def process_article_content(
         self,
         article_id: str,
@@ -299,27 +343,7 @@ Return ONLY the cleaned article text in German. Start directly with the article 
         self.failed_articles = []
         self.in_flight_tasks = 0
 
-        # Get all articles that haven't been processed yet
-        processed = self.db_client.table("processed_content").select("article_id").execute()
-        processed_ids = {item['article_id'] for item in processed.data}
-
-        # Fetch ALL articles ordered by newest first (we'll filter and limit after)
-        query = self.db_client.table("articles").select("id, title, content, theme").order("created_at", desc=True)
-        articles = query.execute()
-
-        if not articles.data:
-            logger.info("No articles found")
-            return self.get_statistics()
-
-        # Filter out already processed
-        articles_to_process = [
-            item for item in articles.data
-            if item['id'] not in processed_ids and item.get('content')
-        ]
-
-        # Apply limit AFTER filtering (so we get the requested number of unprocessed articles)
-        if limit:
-            articles_to_process = articles_to_process[:limit]
+        articles_to_process = self._get_unprocessed_articles(limit=limit)
 
         if not articles_to_process:
             logger.info("No articles to process (all already processed)")
@@ -437,27 +461,7 @@ Return ONLY the cleaned article text in German. Start directly with the article 
         self.total_cost_usd = 0.0
         self.failed_articles = []
 
-        # Get all articles that haven't been processed yet
-        processed = self.db_client.table("processed_content").select("article_id").execute()
-        processed_ids = {item['article_id'] for item in processed.data}
-
-        # Fetch ALL articles ordered by newest first (we'll filter and limit after)
-        query = self.db_client.table("articles").select("id, title, content, theme").order("created_at", desc=True)
-        articles = query.execute()
-
-        if not articles.data:
-            logger.info("No articles found")
-            return self.get_statistics()
-
-        # Filter out already processed
-        articles_to_process = [
-            item for item in articles.data
-            if item['id'] not in processed_ids and item.get('content')
-        ]
-
-        # Apply limit AFTER filtering (so we get the requested number of unprocessed articles)
-        if limit:
-            articles_to_process = articles_to_process[:limit]
+        articles_to_process = self._get_unprocessed_articles(limit=limit)
 
         if not articles_to_process:
             logger.info("No articles to process (all already processed)")

@@ -12,6 +12,8 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 import feedparser
+import httpx
+import time
 from datetime import datetime, timezone, timedelta
 from email.utils import parsedate_to_datetime
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -50,6 +52,32 @@ def is_duplicate_error(error: Exception) -> bool:
     """Detect database duplicate key errors from Supabase/Postgres."""
     error_text = str(error).lower()
     return "duplicate key value" in error_text or "23505" in error_text
+
+
+def parse_feed_with_retry(feed_url: str, max_retries: int = 3, timeout: int = 20):
+    """Fetch and parse RSS feed with timeout and retry/backoff."""
+    headers = {
+        "User-Agent": "german-feed-scraper/1.0 (+https://github.com/ekincelebi/german-feed-scraper)"
+    }
+
+    for attempt in range(max_retries):
+        try:
+            with httpx.Client(timeout=timeout, follow_redirects=True, headers=headers) as client:
+                response = client.get(feed_url)
+                if response.status_code in (429, 500, 502, 503, 504):
+                    raise RuntimeError(f"HTTP {response.status_code}")
+                response.raise_for_status()
+                return feedparser.parse(response.content)
+        except Exception as error:
+            if attempt == max_retries - 1:
+                raise RuntimeError(f"Feed fetch failed after {max_retries} attempts: {error}") from error
+
+            backoff_seconds = 2 ** attempt
+            logger.warning(
+                f"  Feed fetch retry {attempt + 1}/{max_retries} for {feed_url} after error: {error}. "
+                f"Waiting {backoff_seconds}s..."
+            )
+            time.sleep(backoff_seconds)
 
 
 def is_from_yesterday(entry_date: datetime, reference_date: datetime = None) -> bool:
@@ -124,8 +152,8 @@ class ParallelYesterdayFetcher:
             logger.info(f"[{feed_index}/{total_feeds}] {description}")
             logger.info(f"  Domain: {domain}")
 
-            # Parse RSS feed
-            feed = feedparser.parse(feed_url)
+            # Parse RSS feed with network retry/backoff
+            feed = parse_feed_with_retry(feed_url)
 
             if not feed.entries:
                 logger.warning(f"  ⊘ No entries in feed")

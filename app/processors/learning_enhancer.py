@@ -27,6 +27,7 @@ class LearningEnhancer:
     MODEL = "llama-3.3-70b-versatile"
     MAX_TOKENS = 3000  # For JSON output with annotations
     ESTIMATED_COST_PER_ARTICLE_USD = 0.01
+    FETCH_BATCH_SIZE = 200
 
     def __init__(self, api_key: Optional[str] = None, max_retries: int = 3, retry_delay: int = 2):
         """
@@ -183,6 +184,80 @@ Return ONLY this JSON structure:
         output_cost = (output_tokens / 1_000_000) * self.OUTPUT_COST_PER_1M
         return input_cost + output_cost
 
+    def _get_articles_for_enhancement(self, limit: Optional[int] = None) -> List[Dict[str, Any]]:
+        """Fetch enhancement candidates in batches and avoid N+1 metadata queries."""
+        candidates: List[Dict[str, Any]] = []
+        offset = 0
+
+        while True:
+            upper = offset + self.FETCH_BATCH_SIZE - 1
+            processed_response = (
+                self.db_client
+                .table("processed_content")
+                .select("article_id, cleaned_content")
+                .order("created_at", desc=True)
+                .range(offset, upper)
+                .execute()
+            )
+            processed_batch = processed_response.data or []
+            if not processed_batch:
+                break
+
+            article_ids = [item["article_id"] for item in processed_batch if item.get("article_id")]
+            if not article_ids:
+                if len(processed_batch) < self.FETCH_BATCH_SIZE:
+                    break
+                offset += self.FETCH_BATCH_SIZE
+                continue
+
+            enhanced_response = (
+                self.db_client
+                .table("learning_enhancements")
+                .select("article_id")
+                .in_("article_id", article_ids)
+                .execute()
+            )
+            enhanced_ids = {item["article_id"] for item in (enhanced_response.data or [])}
+
+            metadata_response = (
+                self.db_client
+                .table("articles")
+                .select("id, title, theme, created_at")
+                .in_("id", article_ids)
+                .execute()
+            )
+            metadata_by_id = {item["id"]: item for item in (metadata_response.data or [])}
+
+            for item in processed_batch:
+                article_id = item.get("article_id")
+                cleaned_content = item.get("cleaned_content")
+                if not article_id or not cleaned_content or article_id in enhanced_ids:
+                    continue
+
+                article_meta = metadata_by_id.get(article_id)
+                if not article_meta:
+                    continue
+
+                candidates.append({
+                    "id": article_meta["id"],
+                    "title": article_meta.get("title", "Untitled"),
+                    "theme": article_meta.get("theme", "general"),
+                    "cleaned_content": cleaned_content,
+                    "created_at": article_meta.get("created_at"),
+                })
+                if limit and len(candidates) >= limit:
+                    candidates.sort(key=lambda x: x.get("created_at") or "", reverse=True)
+                    return candidates[:limit]
+
+            if len(processed_batch) < self.FETCH_BATCH_SIZE:
+                break
+            offset += self.FETCH_BATCH_SIZE
+
+        candidates.sort(key=lambda x: x.get("created_at") or "", reverse=True)
+        if limit:
+            return candidates[:limit]
+        return candidates
+
     def enhance_article(
         self,
         article_id: str,
@@ -326,34 +401,7 @@ Return ONLY this JSON structure:
         self.failed_articles = []
         self.in_flight_tasks = 0
 
-        # Get all articles that have been cleaned but not yet enhanced
-        enhanced = self.db_client.table("learning_enhancements").select("article_id").execute()
-        enhanced_ids = {item['article_id'] for item in enhanced.data}
-
-        # Fetch cleaned articles that haven't been enhanced yet
-        query = self.db_client.table("processed_content").select("article_id, cleaned_content").execute()
-
-        articles_with_content = []
-        for item in query.data:
-            if item['article_id'] not in enhanced_ids and item.get('cleaned_content'):
-                # Get article metadata with created_at for sorting
-                article_query = self.db_client.table("articles").select("id, title, theme, created_at").eq("id", item['article_id']).execute()
-                if article_query.data:
-                    article = article_query.data[0]
-                    articles_with_content.append({
-                        'id': article['id'],
-                        'title': article.get('title', 'Untitled'),
-                        'theme': article.get('theme', 'general'),
-                        'cleaned_content': item['cleaned_content'],
-                        'created_at': article.get('created_at')
-                    })
-
-        # Sort by created_at descending (newest first)
-        articles_with_content.sort(key=lambda x: x.get('created_at', ''), reverse=True)
-
-        # Apply limit AFTER filtering
-        if limit:
-            articles_with_content = articles_with_content[:limit]
+        articles_with_content = self._get_articles_for_enhancement(limit=limit)
 
         if not articles_with_content:
             logger.info("No articles to enhance (all already enhanced)")
