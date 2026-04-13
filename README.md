@@ -92,6 +92,28 @@ You can verify the tables were created correctly:
 
 ## Usage
 
+### Recommended Workflow (Most Users)
+
+If you want the standard end-to-end pipeline (fetch -> clean -> enhance), run these in order:
+
+```bash
+# 1) Fetch full articles (yesterday's content)
+venv/bin/python scripts/fetch_yesterday_articles.py
+
+# 2) Clean content for language learners
+venv/bin/python scripts/process_article_content.py --parallel --workers 10
+
+# 3) Add learning annotations
+venv/bin/python scripts/enhance_for_learning.py --parallel --workers 5
+```
+
+For a safer first run, use limits:
+
+```bash
+venv/bin/python scripts/process_article_content.py --limit 100 --parallel --workers 10
+venv/bin/python scripts/enhance_for_learning.py --limit 10 --max-cost 1.0 --parallel --workers 5
+```
+
 ### Step 1: Discover RSS Feeds
 
 Run the feed discovery script to find RSS feeds from the target German websites:
@@ -113,138 +135,37 @@ Saved Y new feeds from https://www.tagesschau.de
 Total feeds saved: Z
 ```
 
-### Step 2: Scrape Articles (RSS Summary Only)
+### Step 2: Fetch Full Articles (Recommended)
 
-Run the basic scraper to fetch article summaries from RSS feeds:
+Fetch complete article text from feeds (not just RSS summaries):
 
 ```bash
-python scripts/run_scraper.py
+venv/bin/python scripts/fetch_yesterday_articles.py
 ```
 
 This will:
-- Fetch all active feeds from the database
-- Parse each RSS feed
-- Extract article metadata (title, URL, summary from RSS)
-- Save new articles to the `articles` table (skips duplicates)
+- Load configured feeds from the database
+- Fetch articles published yesterday
+- Extract full webpage content (title, URL, body text, metadata)
+- Save new records to `articles` (skips duplicates)
 
-**Note:** This only gets the RSS feed summary, not the full article content.
-
-Expected output:
-```
-Found X active feeds to scrape
-Saved Y new articles from feed...
-...
-Total feeds processed: X
-Total new articles saved: Y
-Failed feeds: Z
-```
-
-### Step 3: Scrape Full Article Content (Recommended)
-
-The full content scraper extracts complete article text from webpages. It supports two modes:
-
-#### Option A: Parallel + Round-Robin (RECOMMENDED - 10-50x Faster)
-
-This is the **recommended approach** for scraping 698 feeds efficiently with guaranteed domain diversity:
+Common options:
 
 ```bash
-# Default: Parallel mode with 15 workers, 3 max per domain
-python scripts/scrape_full_content.py
+# Increase parallelism
+venv/bin/python scripts/fetch_yesterday_articles.py --workers 20 --max-per-domain 5
+
+# Restrict to a single domain
+venv/bin/python scripts/fetch_yesterday_articles.py --domain rss.dw.com
+
+# Limit number of feeds (good for testing)
+venv/bin/python scripts/fetch_yesterday_articles.py --limit 10
+
+# Show all options
+venv/bin/python scripts/fetch_yesterday_articles.py --help
 ```
 
-**Why Parallel + Round-Robin?**
-- **Speed:** 10-50x faster than sequential (completes in 30-60 minutes instead of hours)
-- **Diversity:** Guarantees articles from all 12 domains, even if interrupted
-- **Respectful:** Limits concurrent requests per domain to avoid overwhelming servers
-- **Smart ordering:** Round-robin ensures first 100 feeds span all domains
-
-**How it works:**
-1. Groups feeds by domain (spiegel.de, tagesschau.de, dw.com, etc.)
-2. Orders feeds in round-robin fashion (1 from each domain, repeat)
-3. Processes 15 feeds concurrently with max 3 requests per domain
-4. Provides real-time progress updates with ETA
-
-Expected output:
-```
-===============================================================================
-PARALLEL + ROUND-ROBIN FULL CONTENT SCRAPER
-===============================================================================
-Total feeds: 698
-Max workers: 15
-Max per domain: 3
-===============================================================================
-Grouping feeds across 12 domains:
-  www.spiegel.de: 189 feeds
-  www.tagesschau.de: 179 feeds
-  rss.dw.com: 145 feeds
-  ...
-Ordered 698 feeds using round-robin strategy
-Starting parallel scraping...
-
-Progress: 10/698 (1.4%) | Articles: 156 | Rate: 2.3 feeds/sec | ETA: 42 min
-Progress: 50/698 (7.2%) | Articles: 782 | Rate: 2.8 feeds/sec | ETA: 35 min
-...
-===============================================================================
-SCRAPING COMPLETE!
-===============================================================================
-Total feeds: 698
-Successful: 691
-Failed: 7
-Total articles: 8,934
-Domains covered: 12
-Duration: 42m 18s
-Average: 2.75 feeds/sec
-===============================================================================
-
-Domains covered:
-  ✓ rss.dw.com
-  ✓ t3n.de
-  ✓ www.apotheken-umschau.de
-  ✓ www.brigitte.de
-  ✓ www.geo.de
-  ✓ www.heise.de
-  ✓ www.nachrichtenleicht.de
-  ✓ www.spiegel.de
-  ✓ www.tagesschau.de
-  ...
-```
-
-**Advanced Options:**
-
-```bash
-# Test with stratified sampling (5 feeds per domain = 60 feeds total)
-python scripts/scrape_full_content.py --stratified --feeds-per-domain 5
-
-# Scrape single domain only
-python scripts/scrape_full_content.py --domain rss.dw.com
-
-# Custom worker configuration for faster scraping
-python scripts/scrape_full_content.py --workers 20 --max-per-domain 5
-
-# See all options
-python scripts/scrape_full_content.py --help
-```
-
-#### Option B: Sequential Mode (Original - Slow)
-
-For testing or if you prefer the original sequential approach:
-
-```bash
-python scripts/scrape_full_content.py --sequential
-```
-
-**Note:** Sequential mode processes feeds one-by-one and takes 12-23 hours for 698 feeds. Only use this for testing or debugging.
-
-**Benefits of Full Content Scraping:**
-- Gets the complete article text, not just RSS summaries
-- Removes HTML tags and formatting
-- Provides clean, readable content
-- Better for analysis and language learning
-- Parallel mode ensures diverse dataset from all domains quickly
-
-**For detailed comparison of scraping strategies, see:** [docs/SCRAPING_STRATEGIES.md](docs/SCRAPING_STRATEGIES.md)
-
-### Step 4: Clean Article Content for Language Learners (Optional)
+### Step 3: Clean Article Content for Language Learners (Optional)
 
 After scraping articles, clean and optimize article text for learners with `process_article_content.py` (Groq Llama 3.3 70B).
 
@@ -346,7 +267,7 @@ python scripts/process_article_content.py --max-retries 5 --parallel --workers 1
 python scripts/process_article_content.py --help
 ```
 
-### Step 5: Enhance for Learning (Optional)
+### Step 4: Enhance for Learning (Optional)
 
 After content cleaning, enrich articles with vocabulary, grammar, and cultural annotations for learners.
 
@@ -446,7 +367,7 @@ WHERE le.estimated_difficulty = 'B1'
 LIMIT 10;
 ```
 
-### Step 6: View Statistics and Analytics
+### Step 5: View Statistics and Analytics
 
 Use SQL views created by migrations for dashboard-style analytics:
 
